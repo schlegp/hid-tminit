@@ -1,4 +1,4 @@
-obj-m += hid-tminit.o
+obj-m += hid-tminit-dev.o
 KDIR ?= /lib/modules/$(shell uname -r)/build
 
 all:

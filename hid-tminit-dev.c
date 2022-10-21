@@ -390,7 +390,7 @@ static const struct hid_device_id thrustmaster_devices[] = {
 MODULE_DEVICE_TABLE(hid, thrustmaster_devices);
 
 static struct hid_driver thrustmaster_driver = {
-	.name = "hid-thrustmaster",
+	.name = "hid-tminit-dev",
 	.id_table = thrustmaster_devices,
 	.probe = thrustmaster_probe,
 	.remove = thrustmaster_remove,
