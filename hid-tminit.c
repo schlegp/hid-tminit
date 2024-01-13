@@ -70,11 +70,12 @@ static const struct tm_wheel_info tm_wheels_infos[] = {
 	{0x02, 0x04, 0x0005, "Thrustmaster T300 Ferrari Alcantara Edition"},
 	{0x02, 0x06, 0x0005, "Thrustmaster T300RS"},
 	{0x02, 0x09, 0x0005, "Thrustmaster T300RS (Open Wheel Attachment)"},
-	{0x03, 0x06, 0x0006, "Thrustmaster T150RS"}
+	{0x03, 0x06, 0x0006, "Thrustmaster T150RS"},
+	{0x00, 0x09, 0x000b, "Thrustmaster T128"}
 	//{0x04, 0x07, 0x0001, "Thrustmaster TMX"}
 };
 
-static const uint8_t tm_wheels_infos_length = 7;
+static const uint8_t tm_wheels_infos_length = 8;
 
 /*
  * This structs contains (in little endian) the response data
