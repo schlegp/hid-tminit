@@ -385,6 +385,7 @@ error0:
 static const struct hid_device_id thrustmaster_devices[] = {
 	{ HID_USB_DEVICE(0x044f, 0xb65d) },
 	{ HID_USB_DEVICE(0x044f, 0xb664) },
+	{ HID_USB_DEVICE(0x044f, 0xb69c) },
 	{}
 };
 
