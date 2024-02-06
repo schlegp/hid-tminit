@@ -13,6 +13,7 @@
  * Copyright (c) 2020-2021 Dario Pagani <dario.pagani.146+linuxk@gmail.com>
  * Copyright (c) 2020-2024 Kim Kuparinen <kimi.h.kuparinen@gmail.com>
  */
+#include <linux/hid.h>
 #include <linux/usb.h>
 #include <linux/input.h>
 #include <linux/slab.h>
@@ -309,6 +310,7 @@ static int thrustmaster_probe(struct usb_interface *interface, const struct usb_
 	int ret = 0;
 	struct tm_wheel *tm_wheel = NULL;
 	struct usb_device *udev = NULL;
+	printk("ahaa what the fuck\n");
 
 	udev = usb_get_dev(interface_to_usbdev(interface));
 
@@ -385,18 +387,18 @@ error1: usb_put_dev(udev);
 	return ret;
 }
 
-static const struct usb_device_id thrustmaster_devices[] = {
-	{ USB_DEVICE(0x044f, 0xb65d) },
-	{ USB_DEVICE(0x044f, 0xb664) },
-	{ USB_DEVICE(0x044f, 0xb69c) },
+static const struct usb_device_id thrustmaster_hid_devices[] = {
+	{ USB_DEVICE_INTERFACE_CLASS(0x044f, 0xb65d, USB_CLASS_HID) },
+	{ USB_DEVICE_INTERFACE_CLASS(0x044f, 0xb664, USB_CLASS_HID) },
+	{ USB_DEVICE_INTERFACE_CLASS(0x044f, 0xb69c, USB_CLASS_HID) },
 	{}
 };
 
-MODULE_DEVICE_TABLE(usb, thrustmaster_devices);
+MODULE_DEVICE_TABLE(usb, thrustmaster_hid_devices);
 
 static struct usb_driver thrustmaster_driver = {
 	.name = "usb-thrustmaster",
-	.id_table = thrustmaster_devices,
+	.id_table = thrustmaster_hid_devices,
 	.probe = thrustmaster_probe,
 	.disconnect = thrustmaster_disconnect,
 };
