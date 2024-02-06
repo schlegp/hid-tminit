@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * When connected to the machine, the Thrustmaster wheels appear as
- * a «generic» hid gamepad called "Thrustmaster FFB Wheel".
+ * a «generic» USB device "Thrustmaster FFB Wheel".
  *
  * When in this mode not every functionality of the wheel, like the force feedback,
  * are available. To enable all functionalities of a Thrustmaster wheel we have to send
@@ -11,9 +11,8 @@
  * "Thrustmaster FFB Wheel" really is and then sends the appropriate control code.
  *
  * Copyright (c) 2020-2021 Dario Pagani <dario.pagani.146+linuxk@gmail.com>
- * Copyright (c) 2020-2021 Kim Kuparinen <kimi.h.kuparinen@gmail.com>
+ * Copyright (c) 2020-2024 Kim Kuparinen <kimi.h.kuparinen@gmail.com>
  */
-#include <linux/hid.h>
 #include <linux/usb.h>
 #include <linux/input.h>
 #include <linux/slab.h>
@@ -121,6 +120,7 @@ struct __packed tm_wheel_response
 
 struct tm_wheel {
 	struct usb_device *usb_dev;
+	struct usb_interface *interface;
 	struct urb *urb;
 
 	struct usb_ctrlrequest *model_request;
@@ -151,41 +151,38 @@ static const struct usb_ctrlrequest change_request = {
  * these interrupts fix that particular issue. So far they haven't caused any
  * adverse effects in other wheels.
  */
-static void thrustmaster_interrupts(struct hid_device *hdev)
+static void thrustmaster_interrupts(struct usb_device *udev, struct usb_interface *interface)
 {
 	int ret, trans, i, b_ep;
 	u8 *send_buf = kmalloc(256, GFP_KERNEL);
 	struct usb_host_endpoint *ep;
-	struct device *dev = &hdev->dev;
-	struct usb_interface *usbif = to_usb_interface(dev->parent);
-	struct usb_device *usbdev = interface_to_usbdev(usbif);
 
 	if (!send_buf) {
-		hid_err(hdev, "failed allocating send buffer\n");
+		dev_err(&interface->dev, "failed allocating send buffer\n");
 		return;
 	}
 
-	if (usbif->cur_altsetting->desc.bNumEndpoints < 2) {
+	if (interface->cur_altsetting->desc.bNumEndpoints < 2) {
 		kfree(send_buf);
-		hid_err(hdev, "Wrong number of endpoints?\n");
+		dev_err(&interface->dev, "Wrong number of endpoints?\n");
 		return;
 	}
 
-	ep = &usbif->cur_altsetting->endpoint[1];
+	ep = &interface->cur_altsetting->endpoint[1];
 	b_ep = ep->desc.bEndpointAddress;
 
 	for (i = 0; i < ARRAY_SIZE(setup_arr); ++i) {
 		memcpy(send_buf, setup_arr[i], setup_arr_sizes[i]);
 
-		ret = usb_interrupt_msg(usbdev,
-			usb_sndintpipe(usbdev, b_ep),
+		ret = usb_interrupt_msg(udev,
+			usb_sndintpipe(udev, b_ep),
 			send_buf,
 			setup_arr_sizes[i],
 			&trans,
 			USB_CTRL_SET_TIMEOUT);
 
 		if (ret) {
-			hid_err(hdev, "setup data couldn't be sent\n");
+			dev_err(&interface->dev, "setup data couldn't be sent\n");
 			kfree(send_buf);
 			return;
 		}
@@ -196,13 +193,18 @@ static void thrustmaster_interrupts(struct hid_device *hdev)
 
 static void thrustmaster_change_handler(struct urb *urb)
 {
-	struct hid_device *hdev = urb->context;
+	struct tm_wheel *tm_wheel = urb->context;
+	struct usb_interface *interface = tm_wheel->interface;
 
-	// The wheel seems to kill himself before answering the host and therefore is violating the USB protocol...
+	// The wheel seems to kill itself before answering the host and therefore
+	// is violating the USB protocol...
 	if (urb->status == 0 || urb->status == -EPROTO || urb->status == -EPIPE)
-		hid_info(hdev, "Success?! The wheel should have been initialized!\n");
+		dev_info(&interface->dev,
+				"Success, the wheel should have been initialized!\n");
 	else
-		hid_warn(hdev, "URB to change wheel mode seems to have failed with error %d\n", urb->status);
+		dev_warn(&interface->dev,
+				"URB to change wheel mode seems to have failed,"
+				" error code %d\n", urb->status);
 }
 
 /*
@@ -214,16 +216,16 @@ static void thrustmaster_change_handler(struct urb *urb)
  */
 static void thrustmaster_model_handler(struct urb *urb)
 {
-	struct hid_device *hdev = urb->context;
-	struct tm_wheel *tm_wheel = hid_get_drvdata(hdev);
 	uint8_t model = 0;
 	uint8_t attachment = 0;
 	uint8_t attachment_found;
 	int i, ret;
 	const struct tm_wheel_info *twi = NULL;
+	struct tm_wheel *tm_wheel = urb->context;
+	struct usb_interface *interface = tm_wheel->interface;
 
 	if (urb->status) {
-		hid_err(hdev, "URB to get model id failed with error %d\n", urb->status);
+		dev_err(&interface->dev, "URB to get model id failed with error %d\n", urb->status);
 		return;
 	}
 
@@ -234,7 +236,9 @@ static void thrustmaster_model_handler(struct urb *urb)
 		model = tm_wheel->response->data.b.model;
 		attachment = tm_wheel->response->data.b.attachment;
 	} else {
-		hid_err(hdev, "Unknown packet type 0x%x, unable to proceed further with wheel init\n", tm_wheel->response->type);
+		dev_err(&interface->dev,
+				"Unknown packet type 0x%x, unable to proceed further\n",
+				tm_wheel->response->type);
 		return;
 	}
 
@@ -250,9 +254,13 @@ static void thrustmaster_model_handler(struct urb *urb)
 				attachment_found = 1;
 			}
 
-		hid_info(hdev, "Wheel with (model, attachment) = (0x%x, 0x%x) is a %s. attachment_found=%u\n", model, attachment, twi->wheel_name, attachment_found);
+		dev_info(&interface->dev,
+				"Wheel with (model, attachment) = (0x%x, 0x%x) is a %s."
+				" attachment_found=%u\n",
+				model, attachment, twi->wheel_name, attachment_found);
 	} else {
-		hid_err(hdev, "Unknown wheel's model id 0x%x, unable to proceed further with wheel init\n", model);
+		dev_err(&interface->dev, "Unknown wheel's model id 0x%x,"
+				" unable to proceed further\n", model);
 		return;
 	}
 
@@ -264,54 +272,45 @@ static void thrustmaster_model_handler(struct urb *urb)
 		(char *)tm_wheel->change_request,
 		NULL, 0, // We do not expect any response from the wheel
 		thrustmaster_change_handler,
-		hdev
+		tm_wheel
 	);
 
 	ret = usb_submit_urb(tm_wheel->urb, GFP_ATOMIC);
 	if (ret)
-		hid_err(hdev, "Error %d while submitting the change URB. I am unable to initialize this wheel...\n", ret);
+		dev_err(&interface->dev, "Error %d while submitting the change URB."
+				" Unable to initialize this wheel.\n", ret);
 }
 
-static void thrustmaster_remove(struct hid_device *hdev)
+static void thrustmaster_disconnect(struct usb_interface *interface)
 {
-	struct tm_wheel *tm_wheel = hid_get_drvdata(hdev);
+	struct tm_wheel *tm_wheel = usb_get_intfdata(interface);
 
 	usb_kill_urb(tm_wheel->urb);
 
 	kfree(tm_wheel->change_request);
 	kfree(tm_wheel->response);
 	kfree(tm_wheel->model_request);
-	usb_free_urb(tm_wheel->urb);
-	kfree(tm_wheel);
 
-	hid_hw_stop(hdev);
+	usb_free_urb(tm_wheel->urb);
+	usb_put_intf(tm_wheel->interface);
+	usb_put_dev(tm_wheel->usb_dev);
+
+	kfree(tm_wheel);
 }
 
 /*
- * Function called by HID when a hid Thrustmaster FFB wheel is connected to the host.
- * This function starts the hid dev, tries to allocate the tm_wheel data structure and
+ * Function called by USB when a usb Thrustmaster FFB wheel is connected to the host.
+ * This function tries to allocate the tm_wheel data structure and
  * finally send an USB CONTROL REQUEST to the wheel to get [what it seems to be] its
  * model type.
  */
-static int thrustmaster_probe(struct hid_device *hdev, const struct hid_device_id *id)
+static int thrustmaster_probe(struct usb_interface *interface, const struct usb_device_id *id)
 {
 	int ret = 0;
 	struct tm_wheel *tm_wheel = NULL;
+	struct usb_device *udev = NULL;
 
-	if (!hid_is_usb(hdev))
-		return -EINVAL;
-
-	ret = hid_parse(hdev);
-	if (ret) {
-		hid_err(hdev, "parse failed with error %d\n", ret);
-		goto error0;
-	}
-
-	ret = hid_hw_start(hdev, HID_CONNECT_DEFAULT & ~HID_CONNECT_FF);
-	if (ret) {
-		hid_err(hdev, "hw start failed with error %d\n", ret);
-		goto error0;
-	}
+	udev = usb_get_dev(interface_to_usbdev(interface));
 
 	// Now we allocate the tm_wheel
 	tm_wheel = kzalloc(sizeof(struct tm_wheel), GFP_KERNEL);
@@ -348,10 +347,11 @@ static int thrustmaster_probe(struct hid_device *hdev, const struct hid_device_i
 		goto error5;
 	}
 
-	tm_wheel->usb_dev = interface_to_usbdev(to_usb_interface(hdev->dev.parent));
-	hid_set_drvdata(hdev, tm_wheel);
+	tm_wheel->usb_dev = udev;
+	tm_wheel->interface = usb_get_intf(interface);
+	usb_set_intfdata(interface, tm_wheel);
 
-	thrustmaster_interrupts(hdev);
+	thrustmaster_interrupts(udev, interface);
 
 	usb_fill_control_urb(
 		tm_wheel->urb,
@@ -361,12 +361,14 @@ static int thrustmaster_probe(struct hid_device *hdev, const struct hid_device_i
 		tm_wheel->response,
 		sizeof(struct tm_wheel_response),
 		thrustmaster_model_handler,
-		hdev
+		tm_wheel
 	);
 
 	ret = usb_submit_urb(tm_wheel->urb, GFP_ATOMIC);
 	if (ret) {
-		hid_err(hdev, "Error %d while submitting the URB. I am unable to initialize this wheel...\n", ret);
+		dev_err(&interface->dev,
+				"Error %d while submitting the URB."
+				" Unable to initialize this wheel.\n", ret);
 		goto error6;
 	}
 
@@ -374,31 +376,32 @@ static int thrustmaster_probe(struct hid_device *hdev, const struct hid_device_i
 
 error6: kfree(tm_wheel->change_request);
 error5: kfree(tm_wheel->response);
+	usb_put_intf(tm_wheel->interface);
+
 error4: kfree(tm_wheel->model_request);
 error3: usb_free_urb(tm_wheel->urb);
 error2: kfree(tm_wheel);
-error1: hid_hw_stop(hdev);
-error0:
+error1: usb_put_dev(udev);
 	return ret;
 }
 
-static const struct hid_device_id thrustmaster_devices[] = {
-	{ HID_USB_DEVICE(0x044f, 0xb65d) },
-	{ HID_USB_DEVICE(0x044f, 0xb664) },
-	{ HID_USB_DEVICE(0x044f, 0xb69c) },
+static const struct usb_device_id thrustmaster_devices[] = {
+	{ USB_DEVICE(0x044f, 0xb65d) },
+	{ USB_DEVICE(0x044f, 0xb664) },
+	{ USB_DEVICE(0x044f, 0xb69c) },
 	{}
 };
 
-MODULE_DEVICE_TABLE(hid, thrustmaster_devices);
+MODULE_DEVICE_TABLE(usb, thrustmaster_devices);
 
-static struct hid_driver thrustmaster_driver = {
-	.name = "hid-thrustmaster",
+static struct usb_driver thrustmaster_driver = {
+	.name = "usb-thrustmaster",
 	.id_table = thrustmaster_devices,
 	.probe = thrustmaster_probe,
-	.remove = thrustmaster_remove,
+	.disconnect = thrustmaster_disconnect,
 };
 
-module_hid_driver(thrustmaster_driver);
+module_usb_driver(thrustmaster_driver);
 
 MODULE_AUTHOR("Dario Pagani <dario.pagani.146+linuxk@gmail.com>");
 MODULE_LICENSE("GPL");
