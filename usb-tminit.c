@@ -390,7 +390,9 @@ error1: usb_put_dev(udev);
 static const struct usb_device_id thrustmaster_hid_devices[] = {
 	{ USB_DEVICE_INTERFACE_CLASS(0x044f, 0xb65d, USB_CLASS_HID) },
 	{ USB_DEVICE_INTERFACE_CLASS(0x044f, 0xb664, USB_CLASS_HID) },
+	/* seems like 0xb69c can show up either as a HID or as a USB device, maybe? */
 	{ USB_DEVICE_INTERFACE_CLASS(0x044f, 0xb69c, USB_CLASS_HID) },
+	{ USB_DEVICE(0x044f, 0xb69c) },
 	{}
 };
 
