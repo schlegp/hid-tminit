@@ -361,11 +361,9 @@ static int thrustmaster_probe(struct usb_interface *interface, const struct usb_
 	tm_wheel->interface = usb_get_intf(interface);
 	usb_set_intfdata(interface, tm_wheel);
 
-	thrustmaster_interrupts(udev, interface);
-
-	switch (udev->descriptor.idProduct) {
+	switch (le16_to_cpu(udev->descriptor.idProduct)) {
 	case 0xb69c:
-		/* T128 resets on model query for whatever reason, try to
+		/* T128 resets itself for whatever reason, try to
 		 * circumvent it. Ugly magic constant, should probably add a
 		 * define or something */
 		ret = thrustmaster_submit_change(tm_wheel, 0x000b);
@@ -374,6 +372,8 @@ static int thrustmaster_probe(struct usb_interface *interface, const struct usb_
 
 		return ret;
 	}
+
+	thrustmaster_interrupts(udev, interface);
 
 	usb_fill_control_urb(
 		tm_wheel->urb,
