@@ -208,6 +208,29 @@ static void thrustmaster_change_handler(struct urb *urb)
 				" error code %d\n", urb->status);
 }
 
+static int thrustmaster_submit_change(struct tm_wheel *tm_wheel, uint16_t switch_value)
+{
+	tm_wheel->change_request->wValue = cpu_to_le16(switch_value);
+	usb_fill_control_urb(
+		tm_wheel->urb,
+		tm_wheel->usb_dev,
+		usb_sndctrlpipe(tm_wheel->usb_dev, 0),
+		(char *)tm_wheel->change_request,
+		NULL, 0, // We do not expect any response from the wheel
+		thrustmaster_change_handler,
+		tm_wheel
+	);
+
+	int ret = usb_submit_urb(tm_wheel->urb, GFP_ATOMIC);
+	if (ret)
+		dev_err(&tm_wheel->interface->dev,
+				"Error %d while submitting the change URB."
+				" Unable to initialize this wheel.\n",
+				ret);
+
+	return ret;
+}
+
 /*
  * Called by the USB subsystem when the wheel responses to our request
  * to get [what it seems to be] the wheel's model.
@@ -220,7 +243,7 @@ static void thrustmaster_model_handler(struct urb *urb)
 	uint8_t model = 0;
 	uint8_t attachment = 0;
 	uint8_t attachment_found;
-	int i, ret;
+	int i;
 	const struct tm_wheel_info *twi = NULL;
 	struct tm_wheel *tm_wheel = urb->context;
 	struct usb_interface *interface = tm_wheel->interface;
@@ -265,21 +288,7 @@ static void thrustmaster_model_handler(struct urb *urb)
 		return;
 	}
 
-	tm_wheel->change_request->wValue = cpu_to_le16(twi->switch_value);
-	usb_fill_control_urb(
-		tm_wheel->urb,
-		tm_wheel->usb_dev,
-		usb_sndctrlpipe(tm_wheel->usb_dev, 0),
-		(char *)tm_wheel->change_request,
-		NULL, 0, // We do not expect any response from the wheel
-		thrustmaster_change_handler,
-		tm_wheel
-	);
-
-	ret = usb_submit_urb(tm_wheel->urb, GFP_ATOMIC);
-	if (ret)
-		dev_err(&interface->dev, "Error %d while submitting the change URB."
-				" Unable to initialize this wheel.\n", ret);
+	thrustmaster_submit_change(tm_wheel, twi->switch_value);
 }
 
 static void thrustmaster_disconnect(struct usb_interface *interface)
@@ -310,7 +319,6 @@ static int thrustmaster_probe(struct usb_interface *interface, const struct usb_
 	int ret = 0;
 	struct tm_wheel *tm_wheel = NULL;
 	struct usb_device *udev = NULL;
-	printk("ahaa what the fuck\n");
 
 	udev = usb_get_dev(interface_to_usbdev(interface));
 
@@ -354,6 +362,18 @@ static int thrustmaster_probe(struct usb_interface *interface, const struct usb_
 	usb_set_intfdata(interface, tm_wheel);
 
 	thrustmaster_interrupts(udev, interface);
+
+	switch (udev->descriptor.idProduct) {
+	case 0xb69c:
+		/* T128 resets on model query for whatever reason, try to
+		 * circumvent it. Ugly magic constant, should probably add a
+		 * define or something */
+		ret = thrustmaster_submit_change(tm_wheel, 0x000b);
+		if (ret)
+			goto error6;
+
+		return ret;
+	}
 
 	usb_fill_control_urb(
 		tm_wheel->urb,
