@@ -1,4 +1,7 @@
 build/*
 .vscode
 .idea
-
+*.o
+*.ko
+*.mod
+*.cmd

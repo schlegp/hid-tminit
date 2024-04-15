@@ -1,4 +1,3 @@
-obj-m += usb-tminit.o
 KDIR ?= /lib/modules/$(shell uname -r)/build
 
 all:
