@@ -3,5 +3,8 @@ build/*
 .idea
 *.o
 *.ko
-*.mod
+*.mod*
+*.orig
 *.cmd
+Module.symvers
+modules.order
