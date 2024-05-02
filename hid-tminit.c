@@ -1,4 +1,6 @@
 #include <linux/hid.h>
+#include <linux/module.h>
+
 #include "tminit.h"
 
 static int thrustmaster_hid_probe(struct hid_device *hdev, const struct hid_device_id *id)

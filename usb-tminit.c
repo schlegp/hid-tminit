@@ -1,3 +1,5 @@
+#include <linux/module.h>
+
 #include "tminit.h"
 
 static int thrustmaster_usb_probe(struct usb_interface *interface, const struct usb_device_id *id)
