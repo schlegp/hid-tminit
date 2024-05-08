@@ -159,6 +159,7 @@ static void thrustmaster_change_handler(struct urb *urb)
 
 static int thrustmaster_submit_change(struct tm_wheel *tm_wheel, uint16_t switch_value)
 {
+	int ret = 0;
 	tm_wheel->change_request->wValue = cpu_to_le16(switch_value);
 	usb_fill_control_urb(
 		tm_wheel->urb,
@@ -170,7 +171,7 @@ static int thrustmaster_submit_change(struct tm_wheel *tm_wheel, uint16_t switch
 		tm_wheel
 	);
 
-	int ret = usb_submit_urb(tm_wheel->urb, GFP_ATOMIC);
+	ret = usb_submit_urb(tm_wheel->urb, GFP_ATOMIC);
 	if (ret)
 		dev_err(&tm_wheel->interface->dev,
 				"Error %d while submitting the change URB."

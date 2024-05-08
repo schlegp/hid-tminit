@@ -1,5 +1,6 @@
 #include <linux/hid.h>
 #include <linux/module.h>
+#include <linux/slab.h>
 
 #include "tminit.h"
 
